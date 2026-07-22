@@ -1,0 +1,47 @@
+# OBSIDIAN — prompt de dos líneas. Colores NOMBRADOS (siguen el tema activo).
+command_timeout = 1000
+add_newline = true
+
+format = "$directory$git_branch$git_status$nodejs$cmd_duration$line_break$character"
+
+[directory]
+style = "bold blue"
+truncation_length = 3
+truncate_to_repo = true
+format = "󰉋 [$path]($style)[$read_only]($read_only_style) "
+read_only = " 󰌾"
+read_only_style = "red"
+
+[git_branch]
+symbol = " "
+style = "purple"
+format = "[$symbol$branch]($style) "
+
+[git_status]
+style = "yellow"
+format = '([$all_status$ahead_behind]($style) )'
+conflicted = "="
+ahead = "⇡${count}"
+behind = "⇣${count}"
+diverged = "⇕⇡${ahead_count}⇣${behind_count}"
+untracked = "?${count}"
+stashed = "*${count}"
+modified = "!${count}"
+staged = "+${count}"
+renamed = "»${count}"
+deleted = "✘${count}"
+
+[cmd_duration]
+min_time = 2000
+style = "bright-black"
+format = "[ $duration]($style)"
+
+[nodejs]
+symbol = "⬢ "
+style = "green"
+version_format = "${major}"
+format = "[$symbol$version]($style) "
+
+[character]
+success_symbol = "[❯](cyan)"
+error_symbol = "[❯](red)"

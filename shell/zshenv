@@ -1,0 +1,4 @@
+# ~/.zshenv — se lee antes que /etc/zsh/zshrc, que corre un `compinit` con
+# auditoría completa en CADA arranque (era el 87% del tiempo de arranque).
+# Lo saltamos y usamos nuestro propio compinit cacheado en ~/.zshrc.
+skip_global_compinit=1

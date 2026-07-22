@@ -1,0 +1,8 @@
+# backups que crea el instalador
+*.bak-*
+# artefactos de fuentes descargadas
+fonts/*.zip
+fonts/_download/
+# basura del SO
+.DS_Store
+Thumbs.db
