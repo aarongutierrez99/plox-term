@@ -61,7 +61,9 @@ Nota Windows: el **blur acrílico** (`win32_system_backdrop`) se **desactiva al 
 ## 4. Tipografía / WezTerm
 
 - **JetBrains Mono Nerd Font** — elegida por desambiguación (`Il1`, `O0`), altura-x alta. Ligaduras `=> != ->` ON (deliberado).
+- `font_size = 10` — bajado de 11.5 porque el default obligaba a hacer `Ctrl+-` **dos veces en cada ventana**. La barra de pestañas va a 9 para no quedar más grande que el cuerpo.
 - `line_height = 1.15` (respiro vertical), cursor cyan suave (era neón, único color fuera de paleta), `INTEGRATED_BUTTONS|RESIZE` (chrome limpio con botones), panes inactivos atenuados, bell off, WebGpu + 144 fps.
+- `window_frame` se arma por tema con **`frame_for(t)`** (la misma función para el arranque y para el cambio en vivo), así el marco puede seguir el color del tema. Hoy el borde va en **0**: se probó un neón del color de acento y se descartó.
 
 ---
 
@@ -79,3 +81,15 @@ Nota Windows: el **blur acrílico** (`win32_system_backdrop`) se **desactiva al 
 - El warning `can't change option: zle` solo aparece con `zsh -c` **sin terminal**; en una sesión real (pty) no existe. No es un bug de la config.
 - Glifos Nerd Font altos (ej. `󰊢`) pueden no dibujarse; usar los del rango powerline (ej. rama `` U+E0A0) que están en toda Nerd Font.
 - `compinit -C` cacheado no rehace el dump; si agregás completions nuevas, borrá `~/.cache/zsh/zcompdump` (o esperá 24 h al rebuild automático).
+- **`wezterm.lua` vive DOS veces.** La copia **viva** es la de Windows (`C:\Users\<vos>\.wezterm.lua`) — esa es la que WezTerm mira. La del repo es solo el espejo versionado. Editar el repo y guardar **no cambia nada** hasta copiarla a Windows (`install.sh` la despliega; `sync.sh` la trae de vuelta). Costó un rato de "cambio la fuente y no pasa nada".
+- **El filo gris de 1 px alrededor de la ventana es del SO**, no de WezTerm: lo dibuja Windows por tener `RESIZE` en `window_decorations`. Con el borde de WezTerm en 0 igual queda. Solo se va sacando `RESIZE` (y ahí perdés redimensionar arrastrando) o con `NONE`. Se eligió **conservar el resize** y bancar el píxel.
+- **La animación del banner no debe atarse a `stdin`.** La 1ª versión usaba `read -t` sobre la terminal para demorar *y* permitir saltear con una tecla; al arrancar, el emulador manda ruido a stdin (respuestas a queries) y la animación se salteaba **siempre**. Se pasó a demorar con un **FIFO** (`read -t` sobre un fd sin escritor, sin fork por línea) y a decidir si animar según **stdout** (`-t 1`).
+
+---
+
+## 7. Banner de bienvenida
+
+- `banner/banner.sh` **lee** `logo.txt` y `title.txt` — el arte se edita en los `.txt`, no en el script. Los hex viven en `banner/colors.sh` y son **fijos** (identidad de marca): a diferencia del resto del entorno, **no** siguen el tema.
+- **Sale una sola vez por sesión.** El zshrc saluda solo si la shell es interactiva, con TTY y sin `PLOX_NOGREET`; después **exporta** esa marca, así subshells y `exec zsh` quedan mudos. Los **splits** la reciben inyectada desde `wezterm.lua` (`SplitHorizontal`/`SplitVertical` con `set_environment_variables`) — por eso una ventana o pestaña nueva sí saluda y el split no.
+- **Animación** en cascada (línea por línea), sin `sleep` ni un fork por línea. Se apaga con `PLOX_BANNER_ANIM=none` y se regula con `PLOX_BANNER_DELAY`. En pipe/no-TTY imprime instantáneo, así no ensucia ni demora los scripts.
+- Se evaluó **fastfetch** debajo del banner (~34 ms medidos) y se **descartó**: se quería solo el banner.

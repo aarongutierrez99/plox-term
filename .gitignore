@@ -6,6 +6,15 @@ CLAUDE.md
 # artefactos de fuentes descargadas
 fonts/*.zip
 fonts/_download/
+# arte suelto que no va al repo
+banner/ascii/.secret
+
+# swaps / basura de editores
+*.swp
+*.swo
+*~
+*.save
+
 # basura del SO
 .DS_Store
 Thumbs.db

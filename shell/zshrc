@@ -135,3 +135,18 @@ if [[ -r "$_fsh" ]]; then
   FAST_HIGHLIGHT_STYLES[default]='fg=default'
 fi
 unset _f _fsh
+
+# --- Bienvenida: banner (logo verde + PLOXEM rojo) --------------------------
+# Repo raíz, resuelto desde este mismo archivo (es un symlink → repo).
+_plox_repo="${${(%):-%x}:A:h:h}"
+[[ -d "$_plox_repo/banner" ]] || _plox_repo="$HOME/plox-term"
+# `banner` a mano cuando quieras volver a verlo.
+[[ -x "$_plox_repo/banner/banner.sh" ]] && alias banner="'$_plox_repo/banner/banner.sh'"
+# Auto: solo shell interactiva con TTY y sin marca "no saludar". Tras saludar,
+# exporta la marca → subshells y `exec zsh` quedan callados. Los splits reciben
+# PLOX_NOGREET desde wezterm; ventana/pestaña nueva vuelven a saludar.
+if [[ -o interactive && -t 1 && -z "$PLOX_NOGREET" && -x "$_plox_repo/banner/banner.sh" ]]; then
+  "$_plox_repo/banner/banner.sh"
+  export PLOX_NOGREET=1
+fi
+unset _plox_repo

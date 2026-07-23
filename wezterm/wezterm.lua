@@ -147,11 +147,29 @@ local function colors_for(t)
   }
 end
 
+-- window_frame por tema: fuente de la barra + BORDE del color de acento del tema
+-- en los 4 lados (WezTerm no hace glow real; el brillo lo da el color de acento).
+local function frame_for(t)
+  return {
+    font = wezterm.font("JetBrainsMono Nerd Font", { weight = "Medium" }),
+    font_size = 9,   -- proporcional al cuerpo para que la barra no quede más grande
+    active_titlebar_bg   = t.bg,
+    inactive_titlebar_bg = t.bg,
+    -- Marco apagado. Para volver a tener borde neón, subí estos a "0.2cell" /
+    -- "0.1cell" y agregá border_*_color = t.tab.
+    border_left_width    = 0,
+    border_right_width   = 0,
+    border_top_height    = 0,
+    border_bottom_height = 0,
+  }
+end
+
 local function apply_theme(window, name)
   local t = themes[name]
   window:set_config_overrides({
     colors = colors_for(t),
     window_background_opacity = t.opacity,
+    window_frame = frame_for(t),
   })
   write_active(name)
   window:toast_notification("WezTerm", "Tema · " .. name, nil, 1500)
@@ -173,7 +191,7 @@ config.animation_fps = 144
 -- Fuente
 --------------------------------------------------
 config.font = wezterm.font("JetBrainsMono Nerd Font")
-config.font_size = 11.5
+config.font_size = 10   -- tamaño de naturaleza (equivale a ~2× Ctrl+- sobre 11.5)
 config.line_height = 1.15
 config.cell_width = 1.0
 config.harfbuzz_features = { "calt=1", "clig=1", "liga=1" }
@@ -198,12 +216,7 @@ config.hide_tab_bar_if_only_one_tab = false
 config.tab_max_width = 28
 config.show_tab_index_in_tab_bar = false
 config.switch_to_last_active_tab_when_closing_tab = true
-config.window_frame = {
-  font = wezterm.font("JetBrainsMono Nerd Font", { weight = "Medium" }),
-  font_size = 10.0,
-  active_titlebar_bg = themes[active].bg,
-  inactive_titlebar_bg = themes[active].bg,
-}
+config.window_frame = frame_for(themes[active])
 
 wezterm.on("format-tab-title", function(tab, tabs, panes, cfg, hover, max_width)
   local i = tab.tab_index + 1
@@ -268,6 +281,23 @@ config.keys = {
       for i, n in ipairs(order) do if n == cur then idx = i break end end
       apply_theme(window, order[(idx % #order) + 1])
     end),
+  },
+
+  -- Splits. Inyectan PLOX_NOGREET=1 para que el banner NO se repita en el pane
+  -- nuevo (ventana/pestaña nueva sí saludan; el split queda limpio).
+  --   Ctrl+Shift+|  → pane a la derecha (| = divisor vertical)
+  --   Ctrl+Shift+_  → pane abajo       (_ = divisor horizontal)
+  {
+    key = "|", mods = "CTRL|SHIFT",
+    action = wezterm.action.SplitHorizontal({
+      set_environment_variables = { PLOX_NOGREET = "1" },
+    }),
+  },
+  {
+    key = "_", mods = "CTRL|SHIFT",
+    action = wezterm.action.SplitVertical({
+      set_environment_variables = { PLOX_NOGREET = "1" },
+    }),
   },
 }
 
