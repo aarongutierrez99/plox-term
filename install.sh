@@ -63,6 +63,9 @@ link_configs(){
   backup "$HOME/.zshrc";                ln -sf "$REPO_DIR/shell/zshrc"         "$HOME/.zshrc"
   backup "$HOME/.zshenv";               ln -sf "$REPO_DIR/shell/zshenv"        "$HOME/.zshenv"
   backup "$HOME/.config/starship.toml"; ln -sf "$REPO_DIR/shell/starship.toml" "$HOME/.config/starship.toml"
+  # Si bajaste el repo como .zip en vez de clonarlo, los permisos de ejecución se
+  # pierden y el banner de bienvenida no aparecería (falla en silencio).
+  chmod +x "$REPO_DIR"/banner/*.sh 2>/dev/null
   ok "~/.zshrc, ~/.zshenv, ~/.config/starship.toml enlazados a plox-term"
 }
 
@@ -97,6 +100,12 @@ main(){
   set_shell
   echo
   ok "Listo. Abrí una terminal nueva o corré: exec zsh"
-  [[ -d /mnt/c ]] && info "WSL: reiniciá WezTerm para cargar los temas · Ctrl+Shift+Space cambia de tema"
+  if [[ -d /mnt/c ]]; then
+    info "WSL: cerrá WezTerm por completo y volvé a abrirlo (no alcanza con recargar)."
+    info "  · Ctrl+Shift+Space  elegí entre los 15 temas   · F12 los cicla"
+    info "  · La ventana recuerda dónde la dejaste y abre siempre del mismo tamaño."
+    info "  · ¿Se abre más grande que tu pantalla? Cambiá WIN_COLS/WIN_ROWS arriba"
+    info "    de todo en wezterm/wezterm.lua (sección Geometría) y reinstalá."
+  fi
 }
 main "$@"

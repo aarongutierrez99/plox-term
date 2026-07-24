@@ -14,6 +14,8 @@ Mi entorno de terminal completo, empaquetado para **no perderlo nunca** y **rein
 - ⚡ **Rápido de verdad** — arranque **~715 ms → ~335 ms** y tipeo **&lt;1 ms/tecla** (benchmarks en [`MEMORY.md`](MEMORY.md)).
 - 🎨 **15 temas en vivo** estilo Termius — `Ctrl+Shift+Space` y cambia **todo** (fondo, texto, archivos, prompt, sintaxis, pestañas).
 - 🧠 **Color por rol** — un solo lenguaje cromático en prompt, `eza`, sintaxis y listados, sobre la paleta ANSI (por eso el tema recolorea todo junto).
+- 🖼️ **Banner de bienvenida** — logo + nombre en cascada al abrir la terminal, una sola vez por sesión (los splits no lo repiten). Editable: el arte está en `banner/*.txt`, los colores en `banner/colors.sh`.
+- 🪟 **La ventana se acuerda de vos** — abre siempre del mismo tamaño y **donde la dejaste** la última vez. Maximizar no la desconfigura.
 - 🔌 **Portable** — en WSL activa el interop de Windows; en un server Linux puro lo omite solo. El mismo `.zshrc` corre en los dos.
 
 ---
@@ -86,9 +88,34 @@ Detecta que no es WSL y omite WezTerm/Windows. La fuente ya la tiene **tu máqui
 | Blood Dragon | Everforest · Monokai Pro |
 | | Ayu Mirage · Catppuccin Mocha · Nord · Gruvbox |
 
-**Atajos** (WezTerm): `Ctrl+Shift+Space` selector buscable · `F12` ciclar · el elegido se recuerda.
-
 Agregar un tema: copiá un bloque en `wezterm/wezterm.lua` (tabla `themes`), sumá el nombre a `order`, guardá.
+
+## ⌨️ Atajos
+
+| Atajo | Qué hace |
+|---|---|
+| `Ctrl+Shift+Space` | Selector de temas buscable (el elegido se recuerda) |
+| `F12` | Pasar al tema siguiente |
+| `Ctrl+Shift+\|` | Partir la ventana **a la derecha** |
+| `Ctrl+Shift+_` | Partir la ventana **abajo** |
+| `Alt+Enter` | Pantalla completa |
+| `Ctrl+Shift+R` | Recargar la config sin cerrar |
+| `Ctrl+-` / `Ctrl+0` | Achicar la letra / volver al tamaño normal |
+| `banner` | Volver a mostrar el banner cuando quieras |
+
+## 🪟 La ventana: tamaño y posición
+
+Abre **siempre del mismo tamaño** y **donde la dejaste la última vez**. Si la movés, la próxima vez aparece ahí; si la maximizás, no se desconfigura nada.
+
+**Si se abre más grande que tu pantalla** (el tamaño viene medido para un monitor 1080p), es un solo número. En `wezterm/wezterm.lua`, buscá la sección `Geometría`:
+
+```lua
+local WIN_COLS, WIN_ROWS = 174, 39   -- columnas, filas
+```
+
+Bajalos (por ejemplo `140, 32`), guardá, y **cerrá y abrí WezTerm** entero. Para saber qué números te quedaron cómodos: agrandá la ventana a mano y corré `wezterm.exe cli list --format json` — te muestra `cols` y `rows`.
+
+> **Cómo funciona** (por si te lo preguntás): WezTerm sabe *poner* la ventana en un lugar pero no sabe *leer* dónde está. Así que la config genera y compila sola —la primera vez que abrís— un ayudante de 5 KB que le pregunta la posición a Windows y la anota. Ocupa ~16 MB de RAM, no abre ninguna ventana, y se apaga solo cuando cerrás WezTerm. No tenés que instalar ni hacer nada: ya viene resuelto. En Linux/macOS ni se activa (ahí ubica la ventana el sistema).
 
 ## 🧰 Qué incluye
 
@@ -97,8 +124,19 @@ Agregar un tema: copiá un bloque en `wezterm/wezterm.lua` (tabla `themes`), sum
 | Shell | Zsh · Starship · fast-syntax-highlighting · zsh-autosuggestions (async) |
 | CLI | eza · zoxide · fzf · bat · fd · ripgrep |
 | Runtime | NVM (carga perezosa) |
-| Terminal | WezTerm (WebGpu, 15 temas, tab bar custom) |
+| Terminal | WezTerm (WebGpu, 15 temas, tab bar custom, ventana con memoria) |
+| Bienvenida | Banner propio (`banner/`) — arte y colores editables |
 | Fuente | JetBrains Mono Nerd Font |
+
+## 🆘 Si algo no sale como esperabas
+
+| Síntoma | Solución |
+|---|---|
+| Cambié `wezterm.lua` y no pasa nada | WezTerm lee la copia que está en tu **home de Windows**, no la del repo. Corré `~/plox-term/install.sh` de nuevo para copiarla. |
+| Cambié el tamaño de la ventana y sigue igual | El tamaño se aplica al **abrir el programa**. Cerrá **todas** las ventanas de WezTerm y abrilo de nuevo (`Ctrl+Shift+R` no alcanza). |
+| Se ven cuadraditos en vez de íconos | Falta la fuente: corré `bash ~/plox-term/fonts/install.sh` y reiniciá WezTerm. |
+| No aparece el banner al abrir | `chmod +x ~/plox-term/banner/*.sh` (pasa si bajaste el repo como `.zip` en vez de clonarlo). |
+| Quiero volver todo como estaba | `~/plox-term/uninstall.sh` |
 
 ## 🔁 Actualizar tras cambios
 

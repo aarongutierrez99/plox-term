@@ -23,7 +23,17 @@ restore "$HOME/.config/starship.toml"
 
 if [[ -d /mnt/c ]]; then
   for uh in /mnt/c/Users/*/; do
-    [[ -f "$uh/.wezterm.lua" ]] && restore "$uh/.wezterm.lua" && break
+    [[ -f "$uh/.wezterm.lua" ]] || continue
+    restore "$uh/.wezterm.lua"
+    # Estado y ayudantes que genera la config del lado de Windows: el tema elegido
+    # y el vigía que recuerda la posición de la ventana (se compila solo al primer
+    # arranque). Se cortan acá para no dejar nada corriendo ni archivos sueltos.
+    /mnt/c/Windows/System32/taskkill.exe /F /IM .wezterm-pos-watch.exe >/dev/null 2>&1
+    rm -f "$uh/.wezterm-pos-watch.cs"  "$uh/.wezterm-pos-watch.exe" \
+          "$uh/.wezterm-pos-watch.vbs" "$uh/.wezterm-pos-watch.ver" \
+          "$uh/.wezterm-position.txt"  "$uh/.wezterm-theme.txt"
+    ok "limpiado el estado de WezTerm en Windows (tema, posición y vigía)"
+    break
   done
 fi
 

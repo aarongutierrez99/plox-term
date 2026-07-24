@@ -64,6 +64,7 @@ Nota Windows: el **blur acrílico** (`win32_system_backdrop`) se **desactiva al 
 - `font_size = 10` — bajado de 11.5 porque el default obligaba a hacer `Ctrl+-` **dos veces en cada ventana**. La barra de pestañas va a 9 para no quedar más grande que el cuerpo.
 - `line_height = 1.15` (respiro vertical), cursor cyan suave (era neón, único color fuera de paleta), `INTEGRATED_BUTTONS|RESIZE` (chrome limpio con botones), panes inactivos atenuados, bell off, WebGpu + 144 fps.
 - `window_frame` se arma por tema con **`frame_for(t)`** (la misma función para el arranque y para el cambio en vivo), así el marco puede seguir el color del tema. Hoy el borde va en **0**: se probó un neón del color de acento y se descartó.
+- **Tamaño de ventana FIJO** (`initial_cols/rows` = 174×39), no "el último usado". Guardar el último tamaño se rompe con el maximizado: quedaría guardada la medida maximizada y la ventana siguiente, que nace flotante, se pasaría de la pantalla. WezTerm **no expone "¿estoy maximizado?"** (`get_dimensions()` solo trae `is_full_screen`), así que desde Lua no hay forma de filtrarlo. Con la medida clavada, maximizar sale gratis. La **posición** sí se recuerda → §8.
 
 ---
 
@@ -83,6 +84,9 @@ Nota Windows: el **blur acrílico** (`win32_system_backdrop`) se **desactiva al 
 - `compinit -C` cacheado no rehace el dump; si agregás completions nuevas, borrá `~/.cache/zsh/zcompdump` (o esperá 24 h al rebuild automático).
 - **`wezterm.lua` vive DOS veces.** La copia **viva** es la de Windows (`C:\Users\<vos>\.wezterm.lua`) — esa es la que WezTerm mira. La del repo es solo el espejo versionado. Editar el repo y guardar **no cambia nada** hasta copiarla a Windows (`install.sh` la despliega; `sync.sh` la trae de vuelta). Costó un rato de "cambio la fuente y no pasa nada".
 - **El filo gris de 1 px alrededor de la ventana es del SO**, no de WezTerm: lo dibuja Windows por tener `RESIZE` en `window_decorations`. Con el borde de WezTerm en 0 igual queda. Solo se va sacando `RESIZE` (y ahí perdés redimensionar arrastrando) o con `NONE`. Se eligió **conservar el resize** y bancar el píxel.
+- **Para la posición de una ventana, `GetWindowRect` es la trampa; lo correcto es `GetWindowPlacement`.** Medido con una ventana de descarte: normal, las dos coinciden (389,215); **maximizada, `GetWindowRect` devuelve `-8,-8`** y `rcNormalPosition` sigue en 389,215. Con la primera, maximizar antes de cerrar dejaba guardada una posición fuera de pantalla. `rcNormalPosition` es la posición *restaurada* y vale también minimizada.
+- **Un ejecutable de Windows lanzado desde WSL no hereda el entorno de Windows**: `USERPROFILE` viene vacío y `Environment.GetFolderPath(UserProfile)` devuelve `""`, así que el archivo termina en cualquier lado. Lanzado desde `wezterm-gui` (proceso Windows de verdad) anda bien — es un artefacto de probar desde bash, no un bug.
+- **`timeout.exe /T n` falla al toque si le redirigís la entrada** (`ERROR: Input redirection is not supported`), así que un "esperá 8 segundos" en un script se evapora y medís antes de tiempo. Para esperar de verdad desde bash: `PING.EXE -n <n+1> 127.0.0.1 >/dev/null`. Costó un falso negativo entero ("el vigía no escribe" cuando sí escribía).
 - **La animación del banner no debe atarse a `stdin`.** La 1ª versión usaba `read -t` sobre la terminal para demorar *y* permitir saltear con una tecla; al arrancar, el emulador manda ruido a stdin (respuestas a queries) y la animación se salteaba **siempre**. Se pasó a demorar con un **FIFO** (`read -t` sobre un fd sin escritor, sin fork por línea) y a decidir si animar según **stdout** (`-t 1`).
 
 ---
@@ -93,3 +97,19 @@ Nota Windows: el **blur acrílico** (`win32_system_backdrop`) se **desactiva al 
 - **Sale una sola vez por sesión.** El zshrc saluda solo si la shell es interactiva, con TTY y sin `PLOX_NOGREET`; después **exporta** esa marca, así subshells y `exec zsh` quedan mudos. Los **splits** la reciben inyectada desde `wezterm.lua` (`SplitHorizontal`/`SplitVertical` con `set_environment_variables`) — por eso una ventana o pestaña nueva sí saluda y el split no.
 - **Animación** en cascada (línea por línea), sin `sleep` ni un fork por línea. Se apaga con `PLOX_BANNER_ANIM=none` y se regula con `PLOX_BANNER_DELAY`. En pipe/no-TTY imprime instantáneo, así no ensucia ni demora los scripts.
 - Se evaluó **fastfetch** debajo del banner (~34 ms medidos) y se **descartó**: se quería solo el banner.
+
+---
+
+## 8. La ventana recuerda su posición
+
+**El problema:** WezTerm puede **escribir** la posición de una ventana (`position` en `spawn_window`, `window:set_position`) pero **no puede leerla** — `get_dimensions()` devuelve `pixel_width`, `pixel_height`, `dpi`, `is_full_screen` y nada más. No hay x/y en ninguna parte de la API Lua, así que "recordar dónde la dejé" es **imposible en Lua puro**.
+
+**La solución:** que la lea Windows. `gui-startup` levanta un vigía que consulta `GetWindowPlacement` cada 2 s y anota la posición en `~/.wezterm-position.txt`; al arrancar, la config la restaura. La clave es `rcNormalPosition` (ver §6).
+
+Decisiones que costaron y no se deducen del código:
+
+- **Vigía compilado, no PowerShell.** La 1ª versión era un `.ps1` residente: **78 MB** de RAM. El mismo bucle en C# compilado con el `csc.exe` que ya trae .NET Framework 4 (de fábrica en Win10/11) pesa **5,6 KB** y usa **16 MB**. Se compila **solo**, la primera vez que abrís, así que no hay paso de instalación y `wezterm.lua` sigue siendo **el único archivo a desplegar**.
+- **`/target:winexe` es lo que evita la ventana negra.** `powershell.exe` y `csc.exe` son apps de consola: lanzadas desde `wezterm-gui` (que no tiene consola) Windows les abre una. Por eso la compilación —única vez— pasa por `wscript.exe //B` (subsistema GUI) con `Run …, 0, False` = oculto. El ejecutable ya compilado se lanza directo: siendo winexe no abre nada.
+- **Hay que darle tiempo a que la ventana exista.** En `gui-startup` la ventana todavía no tiene `MainWindowHandle`, así que un vigía que salga al primer "no la encuentro" se muere sin hacer nada. Tolera 30 fallos al inicio; recién **después** de haberla visto, 3 fallos seguidos = cerraron WezTerm y se apaga solo.
+- **Mutex con espera de 3 s, no `WaitOne(0)`.** Si cerrás y reabrís rápido, el vigía viejo sigue vivo unos segundos; rindiéndose de una nos quedábamos sin ninguno. Trampa de diagnóstico: un vigía anterior tomando el mutex hace que el nuevo salga en silencio — **parece un bug y es el comportamiento correcto**.
+- **Solo Windows.** Todo el mecanismo está detrás de `IS_WINDOWS` (`wezterm.target_triple`). En Linux/macOS no se activa ni se fuerza posición: ahí ubicar la ventana es tarea del gestor de ventanas.

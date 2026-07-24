@@ -201,11 +201,212 @@ config.harfbuzz_features = { "calt=1", "clig=1", "liga=1" }
 --------------------------------------------------
 config.text_background_opacity = 1.0
 config.window_padding = { left = 12, right = 12, top = 8, bottom = 6 }
-config.initial_cols = 160
-config.initial_rows = 45
 config.window_decorations = "INTEGRATED_BUTTONS|RESIZE"
 config.integrated_title_button_style = "Windows"
 config.inactive_pane_hsb = { saturation = 0.9, brightness = 0.72 }
+-- initial_cols / initial_rows los fija la sección "Geometría" de abajo.
+
+--------------------------------------------------
+-- Geometría · tamaño FIJO, posición RECORDADA
+--------------------------------------------------
+-- TAMAÑO: fijo a propósito. Guardar "el último tamaño" suena mejor pero se rompe
+-- con el maximizado: quedaría guardada la medida maximizada y la próxima ventana,
+-- que nace flotante, se pasaría de la pantalla. WezTerm no expone "¿estoy
+-- maximizado?" (get_dimensions solo trae is_full_screen), así que no hay forma de
+-- filtrarlo. Con la medida clavada, maximizar sale gratis: al reabrir volvés
+-- siempre a esta. Para cambiarla: redimensioná a gusto y leé los valores con
+--   wezterm.exe cli list --format json     (campo "size": cols / rows)
+-- >>> Si clonaste este repo: ESTE es el valor a tocar. Está medido para un monitor
+-- >>> 1080p; en una pantalla más chica bajalo o la ventana va a nacer pasada.
+local WIN_COLS, WIN_ROWS = 174, 39
+config.initial_cols = WIN_COLS
+config.initial_rows = WIN_ROWS
+
+-- POSICIÓN: WezTerm puede ESCRIBIRLA (`position` en spawn_window,
+-- `window:set_position`) pero NO puede leerla — no hay x/y en ninguna parte de la
+-- API Lua. Así que la lee Windows: un vigía en segundo plano consulta
+-- GetWindowPlacement y deja la posición en POS_FILE; acá solo se restaura.
+--
+-- La clave es usar `rcNormalPosition` y NO GetWindowRect: es la posición
+-- RESTAURADA, que sigue siendo la correcta aunque la ventana esté maximizada o
+-- minimizada. Por eso el maximizado tampoco ensucia la posición guardada.
+-- Todo este mecanismo es de Windows. En Linux/macOS no se activa: no hay a quién
+-- preguntarle la posición, y ahí ubicar la ventana es tarea del gestor de ventanas.
+local IS_WINDOWS   = (wezterm.target_triple or ""):find("windows") ~= nil
+local POS_FILE     = wezterm.home_dir .. "\\.wezterm-position.txt"
+local WATCH_CS     = wezterm.home_dir .. "\\.wezterm-pos-watch.cs"
+local WATCH_EXE    = wezterm.home_dir .. "\\.wezterm-pos-watch.exe"
+local WATCH_VER_F  = wezterm.home_dir .. "\\.wezterm-pos-watch.ver"
+local WATCH_VBS    = wezterm.home_dir .. "\\.wezterm-pos-watch.vbs"
+local WATCH_VER    = "1"                    -- subir esto obliga a recompilar el vigía
+local POS_FALLBACK = { x = 251, y = 101 }   -- mientras no haya nada guardado
+
+local function read_line(path)
+  local ok, f = pcall(io.open, path, "r")
+  if ok and f then local l = f:read("*l"); f:close(); return l end
+  return nil
+end
+
+local function file_exists(path)
+  local ok, f = pcall(io.open, path, "r")
+  if ok and f then f:close(); return true end
+  return false
+end
+
+local function write_file(path, body)
+  local ok, f = pcall(io.open, path, "w")
+  if ok and f then f:write(body); f:close(); return true end
+  return false
+end
+
+local function read_pos()
+  local line = read_line(POS_FILE)
+  if line then
+    local x, y = line:match("^(-?%d+)%s+(-?%d+)$")
+    x, y = tonumber(x), tonumber(y)
+    -- Cordura: descarta el -32000 de ventana minimizada y cualquier disparate.
+    if x and y and x > -30000 and y > -30000 and x < 30000 and y < 30000 then
+      return { x = x, y = y }
+    end
+  end
+  return POS_FALLBACK
+end
+
+-- El vigía se genera y se compila solo la primera vez, así que wezterm.lua sigue
+-- siendo el ÚNICO archivo que hay que desplegar. Es un ejecutable de ~5 KB en vez
+-- de un PowerShell residente: 16 MB de RAM contra 78 MB, medidos. Y compilado como
+-- /target:winexe no abre ninguna ventana de consola.
+-- Lleva BOM UTF-8 para que csc.exe no rompa los acentos de los comentarios.
+local WATCH_CS_BODY = "\239\187\191" .. [==[
+// plox-term · vigía de la posición de la ventana de WezTerm.
+// Lo genera wezterm.lua: NO editar acá, se pisa en cada arranque.
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Threading;
+
+static class PosWatch {
+    [StructLayout(LayoutKind.Sequential)] struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
+    [StructLayout(LayoutKind.Sequential)] struct WINDOWPLACEMENT {
+        public int length, flags, showCmd;
+        public POINT ptMinPosition, ptMaxPosition;
+        public RECT rcNormalPosition;
+    }
+    [DllImport("user32.dll")] static extern bool GetWindowPlacement(IntPtr hWnd, ref WINDOWPLACEMENT p);
+
+    static IntPtr FindWezWindow() {
+        foreach (Process p in Process.GetProcessesByName("wezterm-gui"))
+            if (p.MainWindowHandle != IntPtr.Zero) return p.MainWindowHandle;
+        return IntPtr.Zero;
+    }
+
+    static int Main() {
+        // Un solo vigía aunque se abran varias ventanas. Espera 3s en vez de
+        // rendirse de una: si cerrás y reabrís rápido, el vigía viejo puede seguir
+        // vivo unos segundos y sin esta espera nos quedaríamos sin ninguno.
+        using (Mutex mutex = new Mutex(false, "ploxterm-pos-watch")) {
+            bool have;
+            try { have = mutex.WaitOne(3000); }
+            catch (AbandonedMutexException) { have = true; }  // el anterior murió sin soltarlo
+            if (!have) return 0;
+            try {
+                string outPath = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    ".wezterm-position.txt");
+                string last = "";
+                bool seen = false;
+                int misses = 0;
+                while (true) {
+                    IntPtr h = FindWezWindow();
+                    if (h == IntPtr.Zero) {
+                        misses++;
+                        // Al arrancar, la ventana todavía no existe: hay que darle
+                        // tiempo. Si YA se vio y desaparece, es que cerraron WezTerm.
+                        if (seen && misses >= 3) break;
+                        if (!seen && misses > 30) break;
+                    } else {
+                        seen = true; misses = 0;
+                        WINDOWPLACEMENT wp = new WINDOWPLACEMENT();
+                        wp.length = Marshal.SizeOf(wp);
+                        // rcNormalPosition = posición RESTAURADA: sigue siendo la
+                        // correcta con la ventana maximizada o minimizada. Con
+                        // GetWindowRect se guardaría -8,-8 al maximizar.
+                        if (GetWindowPlacement(h, ref wp)) {
+                            int x = wp.rcNormalPosition.Left, y = wp.rcNormalPosition.Top;
+                            string v = x + " " + y;
+                            // Reescribe también si borraron el archivo.
+                            if ((v != last || !File.Exists(outPath)) && x > -30000 && y > -30000) {
+                                try { File.WriteAllText(outPath, v); last = v; } catch { }
+                            }
+                        }
+                    }
+                    Thread.Sleep(2000);
+                }
+            } finally { mutex.ReleaseMutex(); }
+        }
+        return 0;
+    }
+}
+]==]
+
+-- Solo se usa la PRIMERA vez (o al subir WATCH_VER): compila el vigía y lo arranca.
+-- csc.exe es una app de consola, así que se lo llama desde wscript.exe —del
+-- subsistema GUI— con estilo 0 = oculto: no parpadea ninguna ventana negra.
+-- csc.exe viene con .NET Framework 4, de fábrica en Windows 10 y 11.
+-- (Comentarios sin acentos: wscript lee el .vbs como ANSI.)
+local WATCH_VBS_BODY = [==[
+' plox-term · compila el vigia de posicion y lo lanza, sin ventana de consola.
+' Lo genera wezterm.lua: NO editar aca, se pisa.
+Set sh  = CreateObject("WScript.Shell")
+Set fso = CreateObject("Scripting.FileSystemObject")
+home = sh.ExpandEnvironmentStrings("%USERPROFILE%")
+win  = sh.ExpandEnvironmentStrings("%SystemRoot%")
+exe  = home & "\.wezterm-pos-watch.exe"
+src  = home & "\.wezterm-pos-watch.cs"
+csc  = win & "\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
+If Not fso.FileExists(csc) Then csc = win & "\Microsoft.NET\Framework\v4.0.30319\csc.exe"
+If (Not fso.FileExists(exe)) And fso.FileExists(csc) Then
+  sh.Run """" & csc & """ /nologo /target:winexe /optimize+ /out:""" & exe & """ """ & src & """", 0, True
+End If
+If fso.FileExists(exe) Then sh.Run """" & exe & """", 0, False
+]==]
+
+wezterm.on("gui-startup", function(cmd)
+  -- `cmd` trae lo pedido por línea de comandos (o nil). Se copia para no pisarle
+  -- nada y se le agrega la geometría.
+  if cmd ~= nil and type(cmd) ~= "table" then
+    wezterm.mux.spawn_window(cmd)   -- caso raro: que pase tal cual antes que romper
+  else
+    local args = {}
+    if cmd then for k, v in pairs(cmd) do args[k] = v end end
+    args.width, args.height = WIN_COLS, WIN_ROWS
+    -- Fuera de Windows no hay quién lea la posición, así que no se fuerza ninguna:
+    -- la ubica el gestor de ventanas, que es lo esperable ahí.
+    if IS_WINDOWS then
+      local pos = read_pos()
+      args.position = { x = pos.x, y = pos.y }
+    end
+    wezterm.mux.spawn_window(args)
+  end
+
+  -- Levantar el vigía (solo Windows). Se apaga solo al cerrarse WezTerm.
+  if IS_WINDOWS then
+    write_file(WATCH_CS, WATCH_CS_BODY)
+    -- Si cambió la versión del vigía, tirar el .exe viejo para que se recompile.
+    if read_line(WATCH_VER_F) ~= WATCH_VER then
+      os.remove(WATCH_EXE)
+      write_file(WATCH_VER_F, WATCH_VER)
+    end
+    if file_exists(WATCH_EXE) then
+      pcall(wezterm.background_child_process, { WATCH_EXE })
+    elseif write_file(WATCH_VBS, WATCH_VBS_BODY) then
+      -- Primera vez: compilar (oculto) y arrancar.
+      pcall(wezterm.background_child_process, { "wscript.exe", "//B", "//Nologo", WATCH_VBS })
+    end
+  end
+end)
 
 --------------------------------------------------
 -- Tabs
